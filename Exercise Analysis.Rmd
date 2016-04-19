@@ -6,14 +6,14 @@ output: html_document
 ---
 # Introduction
 
-This is an analysis of exercise data provided by six participants in an exercise program.  The subjects were asked to perform barbell lifts correctly and incorrectly resulting in five different ways of performing the lift.  Data was collected from accelerometers on the belt, forearm, arm, and dumbell of the participants.  There are two sets of data, one for training, and one for test.  The data has a lot of missing values, not a numbers, and infinite values.  These are all set to 0.
+This is an analysis of exercise data provided by six participants in an exercise program.  The subjects were asked to perform barbell lifts correctly and incorrectly resulting in five different ways of performing the lift.  Data was collected from accelerometers on the belt, forearm, arm, and dumbell of the participants.  There are two sets of data, one for training, and one for test.  The data has a lot of missing values, elements that are not a number, and infinite values, plus some error messages embedded in the data.  These are all set to 0.
 
 ```{r}
-pml.training <- read.csv("~/Exercise/pml-training.csv")
+pml.training <- read.csv("~/Exercise/pml-training.csv",na.strings=c("#DIV/0!","NA"))
 pml.training[is.na(pml.training)] <- 0
 pml.training[is.nan(unlist(pml.training))] <- 0
 pml.training[is.infinite(unlist(pml.training))] <- 0
-pml.testing <- read.csv("~/Exercise/pml-testing.csv")
+pml.testing <- read.csv("~/Exercise/pml-testing.csv",na.strings=c("#DIV/0!","NA"))
 pml.testing[is.na(pml.testing)] <- 0
 pml.testing[is.nan(unlist(pml.testing))] <- 0
 pml.testing[is.infinite(unlist(pml.testing))] <- 0
@@ -86,42 +86,45 @@ magnet_<sensor>_z
 Actual Classification - The letter A, B, C, D, E, as appropriate
 classe 
 
-The training dataset is going to consist of all of the measurements and the classe variable.  I will simply remove the first seven columns.
-
-First I will try Principal Component Analysis to see if I can eliminate some of the variables.
+The training dataset is going to consist of all of the measurements and the classe variable.  The columns that serve merely to identify the records are removed.  Columns with no variance in test runs of k nearest neighbors are removed to clear up the output.  As changes are made to the Training Set, they are also made to the Test set.
 
 ```{r}
 library(caret)
 set.seed(12345)
 inTrain <- createDataPartition(y = pml.training$classe, p = 0.70, list = FALSE)
+
 temp.training <- pml.training[inTrain, ]
 temp.training[, 160] <- as.factor(temp.training[, 160])
+
+TrainData <- temp.training[,8:159]
+TrainClasses <- temp.training[,160]
+TrainData$kurtosis_yaw_belt <- NULL
+TrainData$skewness_yaw_belt <- NULL
+TrainData$amplitude_yaw_belt <- NULL
+TrainData$kurtosis_yaw_dumbbell <- NULL
+TrainData$skewness_yaw_dumbbell <- NULL
+TrainData$amplitude_yaw_dumbbell <- NULL
+TrainData$kurtosis_yaw_forearm <- NULL
+TrainData$skewness_yaw_forearm <- NULL
+TrainData$amplitude_yaw_forearm <- NULL
+
 temp.testing <- pml.training[-inTrain, ]
 temp.testing[, 160] <- as.factor(temp.testing[, 160])
-training <- temp.training[, -1:-7]
-testing <- temp.testing[, -1:-7]
 
-typeColor <- ((training$classe))
-# Formula used in SPAM but with factors removed.  Does not seem useful
-prComp <- prcomp(training[sapply(training, function(x) !is.factor(x))])
-plot(prComp$x[,1],prComp$x[,2],col=typeColor,xlab="PC1",ylab="PC2")
+TestData <- temp.testing[, 8:159]
+TestClasses <- temp.testing[,160]
+TestData$kurtosis_yaw_belt <- NULL
+TestData$skewness_yaw_belt <- NULL
+TestData$amplitude_yaw_belt <- NULL
+TestData$kurtosis_yaw_dumbbell <- NULL
+TestData$skewness_yaw_dumbbell <- NULL
+TestData$amplitude_yaw_dumbbell <- NULL
+TestData$kurtosis_yaw_forearm <- NULL
+TestData$skewness_yaw_forearm <- NULL
+TestData$amplitude_yaw_forearm <- NULL
 
-# Pull classe from training and try to find which variables are most significant 
-pcaset <- training[, -153]
-M <- abs(cor(pcaset[sapply(pcaset, function(x) !is.factor(x))]))
-diag(M) <- 0
-which(M > 0.8, arr.ind=T)
+typeColor <- ((temp.training$classe))
 
-# With Caret
-preProc <- preProcess(training[sapply(training, function(x) !is.factor(x)), -153],method="pca")
-exercisePC <- predict(preProc,training[sapply(training, function(x) !is.factor(x))])
-
-modelFit <- train(training$classe ~., method = "rpart", data=exercisePC)
-
-confusionMatrix(training$classe,predict(modelFit,exercisePC))
-
-test_exercisePC <- predict(preProc,testing[sapply(testing, function(x) !is.factor(x))])
-confusionMatrix(testing$classe,predict(modelFit,test_exercisePC))
 
 ```
 
@@ -129,21 +132,39 @@ confusionMatrix(testing$classe,predict(modelFit,test_exercisePC))
 
 # Cross Validation
 
-An accuracy rating of .4 is not exactly good news.
+This run is using k Nearest Neighbors with two different evaluation methods.  The first is cross validation and the second bootstrapping.  There will be limited runs with these methods because of the processing time reuqired.  Setting "cv" takes the better part of a work day on my computer and "boot" takes more than a day.
 
 ```{r}
+# Train with the k Nearest Neighbors, once with "pca" and once with "bootstrap"
+ 
+knnFit1 <- train(TrainData, TrainClasses,
+                 method = "knn",
+                 preProcess = c("center", "scale"),
+                 tuneLength = 10,
+                 trControl = trainControl(method = "cv"))
+ 
+knnFit2 <- train(TrainData, TrainClasses,
+                 method = "knn",
+                 preProcess = c("center", "scale"),
+                 tuneLength = 10, 
+                 trControl = trainControl(method = "boot"))
 
 ```
 
 # Sample Error
 
+The confusion matrix shows that the nearest neighbor analysis is extremely accurate in predicting the class of the effort.
+
 ```{r}
+confusionMatrix(TestClasses,predict(knnFit1,TestData))
+
+confusionMatrix(TestClasses,predict(knnFit2,TestData))
+
 
 ```
 
 # Rationale for the model
 
-To develop the model, I intend to separate the individual sensors out and see if there is a direct correlation between any of the values and the classe variable.  This is suggested by the idea that movement of the waist is the primary criterion for membership in classe e - throwing the hips to the front should result in a large vector on the belt sensor and not throwing the hips forward should leave all of those values low.  The true orientation of the sensor is determined by the magnetic values, so variation of the belt magnetic values beyond a certain amount would also be a key, but there does not appear to be a way to tell what the desired orientation of the subject is.
+To develop the model, I intended to separate the individual sensors out and see if there is a direct correlation between any of the values and the classe variable.  This is suggested by the idea that movement of the waist is the primary criterion for membership in classe e - throwing the hips to the front should result in a large vector on the belt sensor and not throwing the hips forward should leave all of those values low.  The true orientation of the sensor is determined by the magnetic values, so variation of the belt magnetic values beyond a certain amount would also be a key, but there does not appear to be a way to tell what the desired orientation of the subject is.
 
-In the final test, one record from an entire session must be evaluated to determine if the lift is being done correctly.  This means that no model that relies on knowing the previous state of the subject will be of any value.
-
+In the end, I just decided to follow the manual and submit the k Nearest Neighbors with two different validation methods and compare the results.  This is a rather brute force method and leaves little room for a retry if the document does not generation correctly.
