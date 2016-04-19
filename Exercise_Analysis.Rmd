@@ -1,0 +1,170 @@
+---
+title: "Exercise Project"
+author: "Steven LaValle"
+date: "April 5, 2016"
+output: html_document
+---
+# Introduction
+
+This is an analysis of exercise data provided by six participants in an exercise program.  The subjects were asked to perform barbell lifts correctly and incorrectly resulting in five different ways of performing the lift.  Data was collected from accelerometers on the belt, forearm, arm, and dumbell of the participants.  There are two sets of data, one for training, and one for test.  The data has a lot of missing values, elements that are not a number, and infinite values, plus some error messages embedded in the data.  These are all set to 0.
+
+```{r}
+pml.training <- read.csv("~/Exercise/pml-training.csv",na.strings=c("#DIV/0!","NA"))
+pml.training[is.na(pml.training)] <- 0
+pml.training[is.nan(unlist(pml.training))] <- 0
+pml.training[is.infinite(unlist(pml.training))] <- 0
+pml.testing <- read.csv("~/Exercise/pml-testing.csv",na.strings=c("#DIV/0!","NA"))
+pml.testing[is.na(pml.testing)] <- 0
+pml.testing[is.nan(unlist(pml.testing))] <- 0
+pml.testing[is.infinite(unlist(pml.testing))] <- 0
+
+```
+
+The goal of the project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set.
+ - Class A, exactly according to the specification
+ - Class B, throwing the elbows to the front 
+ - Class C, lifting the dumbbell only halfway
+ - Class D, lowering the dumbbell only halfway 
+ - Class E, throwing the hips to the front.
+
+To accomplish this we have to find a combination of measurements that provide neat clusters of data. The final quiz will involve applying the model to 20 different test cases.
+
+
+# Building the model from the 160 variables provided
+
+Record Identification - these do not contribute to the analysis
+
+X                        
+user_name                
+raw_timestamp_part_1    
+raw_timestamp_part_2     
+cvtd_timestamp           
+new_window              
+num_window 
+
+Motion Data - Repeated for each sensor: belt, arm, dumbbell, forearm              
+
+roll_<sensor>                
+pitch_<sensor>              
+yaw_<sensor>                 
+total_accel_<sensor>         
+kurtosis_roll_<sensor>      
+kurtosis_picth_<sensor>      
+kurtosis_yaw_<sensor>        
+skewness_roll_<sensor>      
+skewness_roll_<sensor>.1     
+skewness_yaw_<sensor>        
+max_roll_<sensor>           
+max_picth_<sensor>           
+max_yaw_<sensor>             
+min_roll_<sensor>           
+min_pitch_<sensor>           
+min_yaw_<sensor>             
+amplitude_roll_<sensor>     
+amplitude_pitch_<sensor>     
+amplitude_yaw_<sensor>       
+var_total_accel_<sensor>    
+avg_roll_<sensor>            
+stddev_roll_<sensor>         
+var_roll_<sensor>           
+avg_pitch_<sensor>           
+stddev_pitch_<sensor>        
+var_pitch_<sensor>          
+avg_yaw_<sensor>             
+stddev_yaw_<sensor>          
+var_yaw_<sensor>            
+gyros_<sensor>_x             
+gyros_<sensor>_y             
+gyros_<sensor>_z            
+accel_<sensor>_x             
+accel_<sensor>_y             
+accel_<sensor>_z            
+magnet_<sensor>_x            
+magnet_<sensor>_y            
+magnet_<sensor>_z
+           
+Actual Classification - The letter A, B, C, D, E, as appropriate
+classe 
+
+The training dataset is going to consist of all of the measurements and the classe variable.  The columns that serve merely to identify the records are removed.  Columns with no variance in test runs of k nearest neighbors are removed to clear up the output.  As changes are made to the Training Set, they are also made to the Test set.
+
+```{r}
+library(caret)
+set.seed(12345)
+inTrain <- createDataPartition(y = pml.training$classe, p = 0.70, list = FALSE)
+
+temp.training <- pml.training[inTrain, ]
+temp.training[, 160] <- as.factor(temp.training[, 160])
+
+TrainData <- temp.training[,8:159]
+TrainClasses <- temp.training[,160]
+TrainData$kurtosis_yaw_belt <- NULL
+TrainData$skewness_yaw_belt <- NULL
+TrainData$amplitude_yaw_belt <- NULL
+TrainData$kurtosis_yaw_dumbbell <- NULL
+TrainData$skewness_yaw_dumbbell <- NULL
+TrainData$amplitude_yaw_dumbbell <- NULL
+TrainData$kurtosis_yaw_forearm <- NULL
+TrainData$skewness_yaw_forearm <- NULL
+TrainData$amplitude_yaw_forearm <- NULL
+
+temp.testing <- pml.training[-inTrain, ]
+temp.testing[, 160] <- as.factor(temp.testing[, 160])
+
+TestData <- temp.testing[, 8:159]
+TestClasses <- temp.testing[,160]
+TestData$kurtosis_yaw_belt <- NULL
+TestData$skewness_yaw_belt <- NULL
+TestData$amplitude_yaw_belt <- NULL
+TestData$kurtosis_yaw_dumbbell <- NULL
+TestData$skewness_yaw_dumbbell <- NULL
+TestData$amplitude_yaw_dumbbell <- NULL
+TestData$kurtosis_yaw_forearm <- NULL
+TestData$skewness_yaw_forearm <- NULL
+TestData$amplitude_yaw_forearm <- NULL
+
+typeColor <- ((temp.training$classe))
+
+
+```
+
+
+
+# Cross Validation
+
+This run is using k Nearest Neighbors with two different evaluation methods.  The first is cross validation and the second bootstrapping.  There will be limited runs with these methods because of the processing time reuqired.  Setting "cv" takes the better part of a work day on my computer and "boot" takes more than a day.
+
+```{r}
+# Train with the k Nearest Neighbors, once with "pca" and once with "bootstrap"
+ 
+knnFit1 <- train(TrainData, TrainClasses,
+                 method = "knn",
+                 preProcess = c("center", "scale"),
+                 tuneLength = 10,
+                 trControl = trainControl(method = "cv"))
+ 
+knnFit2 <- train(TrainData, TrainClasses,
+                 method = "knn",
+                 preProcess = c("center", "scale"),
+                 tuneLength = 10, 
+                 trControl = trainControl(method = "boot"))
+
+```
+
+# Sample Error
+
+The confusion matrix shows that the nearest neighbor analysis is extremely accurate in predicting the class of the effort.
+
+```{r}
+confusionMatrix(TestClasses,predict(knnFit1,TestData))
+
+confusionMatrix(TestClasses,predict(knnFit2,TestData))
+
+
+```
+
+# Rationale for the model
+
+To develop the model, I intended to separate the individual sensors out and see if there is a direct correlation between any of the values and the classe variable.  This is suggested by the idea that movement of the waist is the primary criterion for membership in classe e - throwing the hips to the front should result in a large vector on the belt sensor and not throwing the hips forward should leave all of those values low.  The true orientation of the sensor is determined by the magnetic values, so variation of the belt magnetic values beyond a certain amount would also be a key, but there does not appear to be a way to tell what the desired orientation of the subject is.
+
+In the end, I just decided to follow the manual and submit the k Nearest Neighbors with two different validation methods and compare the results.  This is a rather brute force method and leaves little room for a retry if the document does not generation correctly.
